@@ -1,16 +1,16 @@
-# Traffic AI System - Requirements
+# Traffic AI System - Requirements for Streamlit Cloud
 # Install with: pip install -r requirements.txt
 
 # Core Dependencies
 streamlit>=1.28.0
-opencv-python>=4.8.0
+opencv-python-headless>=4.8.0
 pandas>=2.0.0
-numpy>=1.24.0
+numpy>=1.24.0,<2.0.0
 
-# AI/ML
+# AI/ML - With version constraints to prevent memory issues
 ultralytics>=8.0.0
-torch>=2.0.0
-torchvision>=0.15.0
+torch>=2.0.0,<2.3.0
+torchvision>=0.15.0,<0.18.0
 
 # PDF Generation
 reportlab>=4.0.0
