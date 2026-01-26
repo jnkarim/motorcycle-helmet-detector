@@ -1,0 +1,5 @@
+Time,Plate_Number,Detection_Confidence,Source,Image_File
+2026-01-27 03:29:59,,0.846,Video,plate_20260127_032959_7628_conf84.jpg
+2026-01-27 03:30:05,,0.939,Video,plate_20260127_033005_3776_conf93.jpg
+2026-01-27 03:30:10,,0.789,Video,plate_20260127_033010_8176_conf78.jpg
+2026-01-27 03:30:15,,0.841,Video,plate_20260127_033015_3265_conf84.jpg
