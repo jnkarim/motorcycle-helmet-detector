@@ -9,7 +9,7 @@ import csv
 import os
 import numpy as np
 import streamlit as st
-from config import (
+from app_config import (
     RIDER_ID, NO_HELMET_ID, PLATE_ID, HELMET_ID,
     COLOR_RIDER, COLOR_NO_HELMET, COLOR_PLATE,
     CSV_FILE, DUPLICATE_WINDOW, CLASS_NAMES
