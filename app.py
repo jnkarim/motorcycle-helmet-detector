@@ -12,7 +12,7 @@ from datetime import datetime
 from ultralytics import YOLO
 from pathlib import Path
 
-from config import MODEL_PATH, CSV_FILE, SAVE_DIR
+from app_config import MODEL_PATH, CSV_FILE, SAVE_DIR
 from detection_utils import process_frame, initialize_csv
 
 # ================= PREMIUM UI CONFIGURATION =================
@@ -27,9 +27,6 @@ st.set_page_config(
         'About': "AI-Based Helmet Compliance Detection System"
     }
 )
-
-# Now you can use st.title() AFTER set_page_config
-st.title("🏠 Home")
 
 # ================= PREMIUM STYLING =================
 st.markdown("""
