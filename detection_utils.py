@@ -2,6 +2,7 @@
 🏍️ PRECISION HELMET DETECTION ENGINE
 Industry-Standard Implementation
 Strict Rules: Motorcycle Riders Only | No Helmet = Violation | One Clear Plate Image
+Enhanced: Perceptual Hash for Duplicate Detection + Green Box for Safe Riders
 """
 import cv2
 import time
@@ -15,9 +16,13 @@ from app_config import (
     CSV_FILE, DUPLICATE_WINDOW, CLASS_NAMES
 )
 from datetime import datetime
+import hashlib
 
 # Production mode - clean output
-DEBUG_MODE = False  # Set True for debugging
+DEBUG_MODE = True  # Set False to disable console logs
+
+# Color for safe riders with helmets
+COLOR_SAFE = (0, 255, 0)  # Green
 
 # ==========================================
 # HELPER FUNCTIONS
@@ -53,6 +58,88 @@ def is_inside(inner_box, outer_box, tolerance=0):
     cx, cy = get_center(inner_box)
     ox1, oy1, ox2, oy2 = outer_box
     return (ox1 - tolerance < cx < ox2 + tolerance) and (oy1 - tolerance < cy < oy2 + tolerance)
+
+def compute_perceptual_hash(image, hash_size=8):
+    """
+    Compute perceptual hash (pHash) of an image
+    This is robust to minor variations but identifies similar images
+    Perfect for detecting duplicate number plates even with slight camera movement
+    """
+    try:
+        if image is None or image.size == 0:
+            return None
+        
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Resize to hash_size+1 to allow DCT
+        resized = cv2.resize(gray, (hash_size + 1, hash_size + 1), interpolation=cv2.INTER_LANCZOS4)
+        
+        # Convert to float for DCT
+        resized_float = np.float32(resized)
+        
+        # Compute DCT (Discrete Cosine Transform)
+        dct = cv2.dct(resized_float)
+        
+        # Keep only top-left corner (low frequencies)
+        dct_low = dct[:hash_size, :hash_size]
+        
+        # Get median value
+        median = np.median(dct_low)
+        
+        # Create binary hash: 1 if above median, 0 otherwise
+        binary = dct_low > median
+        
+        # Convert to string hash
+        hash_str = ''.join(['1' if b else '0' for b in binary.flatten()])
+        
+        return hash_str
+        
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"Hash computation error: {e}")
+        return None
+
+def compute_average_hash(image, hash_size=16):
+    """
+    Compute average hash (aHash) as backup verification
+    Simpler but effective for duplicate detection
+    """
+    try:
+        if image is None or image.size == 0:
+            return None
+        
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Resize to hash_size x hash_size
+        resized = cv2.resize(gray, (hash_size, hash_size), interpolation=cv2.INTER_AREA)
+        
+        # Get average pixel value
+        avg = resized.mean()
+        
+        # Create binary hash based on average
+        binary = resized > avg
+        
+        # Convert to string
+        hash_str = ''.join(['1' if b else '0' for b in binary.flatten()])
+        
+        return hash_str
+        
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"Average hash error: {e}")
+        return None
+
+def hamming_distance(hash1, hash2):
+    """
+    Calculate Hamming distance between two hashes
+    Returns number of different bits (lower = more similar)
+    """
+    if hash1 is None or hash2 is None or len(hash1) != len(hash2):
+        return float('inf')
+    
+    return sum(c1 != c2 for c1, c2 in zip(hash1, hash2))
 
 def enhance_plate_image(plate_crop):
     """
@@ -95,30 +182,111 @@ def enhance_plate_image(plate_crop):
         print(f"Enhancement error: {e}")
         return plate_crop
 
-def is_duplicate_plate(plate_box, now):
+def is_duplicate_plate(plate_crop, plate_box, now):
     """
-    Check if this plate was already captured (location-based)
-    Prevents multiple captures of same bike
+    ULTRA-AGGRESSIVE duplicate detection
+    Multiple layers of protection to ensure NO duplicates
     """
-    if "recent_plates" not in st.session_state:
-        st.session_state.recent_plates = []
+    # Initialize session state
+    if "recent_plate_data" not in st.session_state:
+        st.session_state.recent_plate_data = []
     
-    px, py = get_center(plate_box)
+    if "last_save_time" not in st.session_state:
+        st.session_state.last_save_time = 0
     
-    # Clean up old entries
-    st.session_state.recent_plates = [
-        (x, y, t) for x, y, t in st.session_state.recent_plates
+    # STRICT COOLDOWN - 3 seconds minimum between ANY saves
+    COOLDOWN_SECONDS = 3.0
+    time_since_last_save = now - st.session_state.last_save_time
+    
+    if time_since_last_save < COOLDOWN_SECONDS:
+        if DEBUG_MODE:
+            print(f"🚫 COOLDOWN BLOCK - Only {time_since_last_save:.2f}s since last save (need {COOLDOWN_SECONDS}s)")
+        return True  # Block as duplicate
+    
+    # Clean up old entries (keep for 30 seconds)
+    st.session_state.recent_plate_data = [
+        (h1, h2, h3, img_bytes, x, y, t) for h1, h2, h3, img_bytes, x, y, t in st.session_state.recent_plate_data
         if now - t < DUPLICATE_WINDOW
     ]
     
-    # Check spatial proximity
-    for x, y, t in st.session_state.recent_plates:
-        distance = ((px - x)**2 + (py - y)**2)**0.5
-        if distance < 150:  # Same plate if within 150 pixels
+    # Generate multiple hashes
+    try:
+        # Hash 1: High-res MD5 (very distinctive)
+        gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+        resized_hires = cv2.resize(gray, (64, 64))  # Higher resolution
+        md5_hash = hashlib.md5(resized_hires.tobytes()).hexdigest()
+        
+        # Also store raw bytes for exact comparison
+        resized_comparison = cv2.resize(gray, (32, 32))
+        img_bytes = resized_comparison.tobytes()
+        
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"⚠️ Hash generation failed: {e}")
+        return False
+    
+    # Hash 2 & 3: Perceptual hashes
+    phash = compute_perceptual_hash(plate_crop)
+    ahash = compute_average_hash(plate_crop)
+    
+    if md5_hash is None or phash is None or ahash is None:
+        if DEBUG_MODE:
+            print(f"⚠️ Hash computation returned None")
+        return False
+    
+    # Get position
+    px, py = get_center(plate_box)
+    
+    # Check against ALL recent plates
+    for stored_md5, stored_phash, stored_ahash, stored_bytes, stored_x, stored_y, stored_time in st.session_state.recent_plate_data:
+        
+        # Check 1: EXACT byte-level match
+        if img_bytes == stored_bytes:
+            if DEBUG_MODE:
+                print(f"🚫 DUPLICATE - Exact byte match")
+            return True
+        
+        # Check 2: MD5 match (high-res)
+        if md5_hash == stored_md5:
+            if DEBUG_MODE:
+                print(f"🚫 DUPLICATE - MD5 match")
+            return True
+        
+        # Check 3: Very similar pHash
+        phash_dist = hamming_distance(phash, stored_phash)
+        if phash_dist <= 3:  # VERY strict
+            if DEBUG_MODE:
+                print(f"🚫 DUPLICATE - Very similar pHash (dist: {phash_dist})")
+            return True
+        
+        # Check 4: Very similar aHash
+        ahash_dist = hamming_distance(ahash, stored_ahash)
+        if ahash_dist <= 20:  # VERY strict
+            if DEBUG_MODE:
+                print(f"🚫 DUPLICATE - Very similar aHash (dist: {ahash_dist})")
+            return True
+        
+        # Check 5: Close position + similar hash
+        spatial_dist = ((px - stored_x)**2 + (py - stored_y)**2)**0.5
+        if spatial_dist < 100 and phash_dist <= 10:
+            if DEBUG_MODE:
+                print(f"🚫 DUPLICATE - Close position + similar (dist: {spatial_dist:.0f}px, pHash: {phash_dist})")
+            return True
+        
+        # Check 6: Both hashes moderately similar
+        if phash_dist <= 10 and ahash_dist <= 30:
+            if DEBUG_MODE:
+                print(f"🚫 DUPLICATE - Both hashes match (pHash: {phash_dist}, aHash: {ahash_dist})")
             return True
     
-    # Register new plate
-    st.session_state.recent_plates.append((px, py, now))
+    # NOT A DUPLICATE - Save everything
+    st.session_state.recent_plate_data.append((md5_hash, phash, ahash, img_bytes, px, py, now))
+    st.session_state.last_save_time = now
+    
+    if DEBUG_MODE:
+        print(f"✅✅✅ NEW PLATE SAVED - Total unique plates: {len(st.session_state.recent_plate_data)}")
+        print(f"    MD5: {md5_hash[:16]}... | pHash: {phash[:16]}... | Position: ({px}, {py})")
+    
     return False
 
 # ==========================================
@@ -131,9 +299,9 @@ def process_frame(frame, results, **kwargs):
     
     Rules:
     1. Only process RIDERS (people on motorcycles)
-    2. Check if rider has HELMET → Skip if yes
+    2. Check if rider has HELMET → Show GREEN box if yes (SAFE)
     3. Check if rider has NO_HELMET → Violation if yes
-    4. Find best PLATE image → Save ONE clear image per bike
+    4. Find best PLATE image → Save ONE clear image per bike using perceptual hashing
     """
     
     # === STEP 1: Collect Detections ===
@@ -164,6 +332,7 @@ def process_frame(frame, results, **kwargs):
     
     # === STEP 2: Process Each Rider (Motorcycle Only) ===
     violation_count = 0
+    safe_count = 0
     
     for rider_data in riders:
         rx1, ry1, rx2, ry2, r_conf = rider_data
@@ -171,6 +340,7 @@ def process_frame(frame, results, **kwargs):
         
         # === CHECK 1: Does rider have HELMET? ===
         has_helmet = False
+        best_helmet = None
         
         for helmet_data in helmets:
             hx1, hy1, hx2, hy2, h_conf = helmet_data
@@ -182,15 +352,22 @@ def process_frame(frame, results, **kwargs):
             
             if inside or iou > 0.15:
                 has_helmet = True
-                if DEBUG_MODE:
-                    cv2.rectangle(frame, (hx1, hy1), (hx2, hy2), (0, 255, 0), 2)
-                    cv2.putText(frame, "SAFE", (hx1, hy1-5),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                best_helmet = helmet_data
                 break
         
-        # SKIP if rider has helmet (SAFE)
+        # === SAFE RIDER - Show GREEN box ===
         if has_helmet:
-            continue
+            safe_count += 1
+            
+            # Draw GREEN box around rider only
+            cv2.rectangle(frame, (rx1, ry1), (rx2, ry2), COLOR_SAFE, 3)
+            
+            # Simple label
+            cv2.rectangle(frame, (rx1, ry1-35), (rx1+100, ry1), (0, 200, 0), -1)
+            cv2.putText(frame, "HELMET", (rx1+5, ry1-8),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            continue  # Skip to next rider
         
         # === CHECK 2: Does rider have NO_HELMET? ===
         has_no_helmet = False
@@ -218,14 +395,13 @@ def process_frame(frame, results, **kwargs):
         
         nx1, ny1, nx2, ny2, nh_conf = best_no_helmet
         
-        # Draw violation annotations
+        # Draw violation box around rider only
         cv2.rectangle(frame, (rx1, ry1), (rx2, ry2), COLOR_RIDER, 3)
-        cv2.rectangle(frame, (nx1, ny1), (nx2, ny2), COLOR_NO_HELMET, 3)
         
-        # Violation badge
-        cv2.rectangle(frame, (rx1, ry1-40), (rx1+200, ry1), (0, 0, 0), -1)
-        cv2.putText(frame, f"VIOLATION #{violation_count}", (rx1+5, ry1-10),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        # Simple label
+        cv2.rectangle(frame, (rx1, ry1-35), (rx1+130, ry1), (0, 0, 200), -1)
+        cv2.putText(frame, "NO HELMET", (rx1+5, ry1-8),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         
         # === CHECK 3: Find BEST Plate for This Rider ===
         best_plate = None
@@ -251,35 +427,35 @@ def process_frame(frame, results, **kwargs):
                     best_plate_score = quality_score
                     best_plate = pl_data
         
-        # === SAVE BEST PLATE IMAGE ===
+        # === SAVE BEST PLATE IMAGE (with duplicate prevention) ===
         if best_plate:
             px1, py1, px2, py2, pl_conf = best_plate
-            
-            # Check for duplicates
-            now = time.time()
             plate_box = (px1, py1, px2, py2)
             
-            if not is_duplicate_plate(plate_box, now):
-                # Draw plate box
-                cv2.rectangle(frame, (px1, py1), (px2, py2), COLOR_PLATE, 3)
+            # Extract plate crop for duplicate checking
+            try:
+                # Add padding for better capture
+                pad = 10
+                crop_y1 = max(0, py1 - pad)
+                crop_y2 = min(frame.shape[0], py2 + pad)
+                crop_x1 = max(0, px1 - pad)
+                crop_x2 = min(frame.shape[1], px2 + pad)
                 
-                # Visual connection
-                nh_center = get_center((nx1, ny1, nx2, ny2))
-                plate_center = get_center(plate_box)
-                cv2.line(frame, nh_center, plate_center, (0, 255, 0), 2)
+                plate_crop = frame[crop_y1:crop_y2, crop_x1:crop_x2].copy()
                 
-                # Extract and enhance plate
-                try:
-                    # Add padding for better capture
-                    pad = 10
-                    crop_y1 = max(0, py1 - pad)
-                    crop_y2 = min(frame.shape[0], py2 + pad)
-                    crop_x1 = max(0, px1 - pad)
-                    crop_x2 = min(frame.shape[1], px2 + pad)
+                if plate_crop.size > 0:
+                    # Check for duplicates using perceptual hashing
+                    now = time.time()
                     
-                    plate_crop = frame[crop_y1:crop_y2, crop_x1:crop_x2].copy()
-                    
-                    if plate_crop.size > 0:
+                    if not is_duplicate_plate(plate_crop, plate_box, now):
+                        # Draw plate box
+                        cv2.rectangle(frame, (px1, py1), (px2, py2), COLOR_PLATE, 3)
+                        
+                        # Visual connection
+                        nh_center = get_center((nx1, ny1, nx2, ny2))
+                        plate_center = get_center(plate_box)
+                        cv2.line(frame, nh_center, plate_center, (0, 255, 0), 2)
+                        
                         # Enhance for clarity
                         enhanced_plate = enhance_plate_image(plate_crop)
                         
@@ -309,21 +485,26 @@ def process_frame(frame, results, **kwargs):
                         
                         if DEBUG_MODE:
                             print(f"✅ SAVED: {plate_filename} | Confidence: {pl_conf:.2f}")
-                
-                except Exception as e:
-                    if DEBUG_MODE:
-                        print(f"❌ Plate save error: {e}")
+                    
+                    else:
+                        # Duplicate detected - show feedback
+                        cv2.putText(frame, "DUPLICATE SKIPPED", (px1, py2+25),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                        
+                        if DEBUG_MODE:
+                            print(f"⏭️  SKIPPED: Duplicate plate")
+            
+            except Exception as e:
+                if DEBUG_MODE:
+                    print(f"❌ Plate save error: {e}")
         
         else:
             # Violation but no plate
             cv2.putText(frame, "NO PLATE DETECTED", (rx1, ry2+25),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
     
-    # === Status overlay ===
-    if violation_count > 0:
-        cv2.rectangle(frame, (10, 10), (300, 60), (0, 0, 0), -1)
-        cv2.putText(frame, f"VIOLATIONS: {violation_count}", (20, 45),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+    # === No status overlay ===
+    # Counters removed as requested
     
     return frame
 
