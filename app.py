@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from ultralytics import YOLO
 from pathlib import Path
 import glob
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # For Streamlit compatibility
 
 from app_config import MODEL_PATH, CSV_FILE, SAVE_DIR
 from detection_utils import process_frame, initialize_csv
@@ -834,32 +837,246 @@ with tab3:
 
 # ================= TAB 4: ANALYTICS =================
 with tab4:
-    st.markdown("### 📊 VIOLATION ANALYTICS")
+    st.markdown("### 📊 INTERACTIVE ANALYTICS DASHBOARD")
     
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
             
             if len(df) > 0:
-                # Summary metrics
+                # ============ TOP ANIMATED METRICS ============
+                st.markdown("#### 🎯 Real-Time Statistics")
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    st.metric("📈 Total Cases", len(df))
+                    total = len(df)
+                    st.markdown(f"""
+                    <div style='text-align: center; padding: 25px; background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%); 
+                                border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 2px solid #DC143C;'>
+                        <div style='font-size: 40px; margin-bottom: 10px;'>🚨</div>
+                        <h1 style='color: #DC143C; font-size: 48px; margin: 0; font-weight: 900;'>{total}</h1>
+                        <p style='color: #ccc; margin: 10px 0; font-size: 13px; letter-spacing: 1px;'>TOTAL VIOLATIONS</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
                 with col2:
-                    reviewed = len(df[df['Plate_Number'].notna() & (df['Plate_Number'] != '')])
-                    st.metric("✅ Reviewed", reviewed)
-                with col3:
-                    pending = len(df) - reviewed
-                    st.metric("⏳ Pending", pending)
-                with col4:
                     today = datetime.now().strftime('%Y-%m-%d')
                     today_count = len(df[df['Time'].str.contains(today, na=False)])
-                    st.metric("📅 Today", today_count)
+                    st.markdown(f"""
+                    <div style='text-align: center; padding: 25px; background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%); 
+                                border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 2px solid #4CAF50;'>
+                        <div style='font-size: 40px; margin-bottom: 10px;'>📅</div>
+                        <h1 style='color: #4CAF50; font-size: 48px; margin: 0; font-weight: 900;'>{today_count}</h1>
+                        <p style='color: #ccc; margin: 10px 0; font-size: 13px; letter-spacing: 1px;'>TODAY'S CASES</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col3:
+                    avg_conf = df['Detection_Confidence'].mean()
+                    st.markdown(f"""
+                    <div style='text-align: center; padding: 25px; background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%); 
+                                border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 2px solid #2196F3;'>
+                        <div style='font-size: 40px; margin-bottom: 10px;'>🎯</div>
+                        <h1 style='color: #2196F3; font-size: 48px; margin: 0; font-weight: 900;'>{avg_conf:.1f}%</h1>
+                        <p style='color: #ccc; margin: 10px 0; font-size: 13px; letter-spacing: 1px;'>AVG CONFIDENCE</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col4:
+                    reviewed = len(df[df['Plate_Number'].notna() & (df['Plate_Number'] != '')])
+                    st.markdown(f"""
+                    <div style='text-align: center; padding: 25px; background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%); 
+                                border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 2px solid #FF9800;'>
+                        <div style='font-size: 40px; margin-bottom: 10px;'>✅</div>
+                        <h1 style='color: #FF9800; font-size: 48px; margin: 0; font-weight: 900;'>{reviewed}</h1>
+                        <p style='color: #ccc; margin: 10px 0; font-size: 13px; letter-spacing: 1px;'>REVIEWED</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # Set dark style for all charts
+                plt.style.use('dark_background')
+                
+                # ============ CHARTS ROW 1 ============
+                st.markdown("#### 📈 Violation Trends & Patterns")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("##### 📅 Daily Violation Trend")
+                    df['Date'] = pd.to_datetime(df['Time']).dt.date
+                    time_data = df.groupby('Date').size().reset_index(name='Count')
+                    
+                    fig1, ax1 = plt.subplots(figsize=(10, 5))
+                    ax1.plot(time_data['Date'], time_data['Count'], 
+                            color='#DC143C', linewidth=2.5, marker='o', markersize=6, markerfacecolor='#DC143C', markeredgecolor='white', markeredgewidth=1.5)
+                    ax1.fill_between(time_data['Date'], time_data['Count'], alpha=0.2, color='#DC143C')
+                    ax1.set_xlabel('Date', fontsize=11, color='#ccc')
+                    ax1.set_ylabel('Violations', fontsize=11, color='#ccc')
+                    ax1.set_title('Violations Over Time', fontsize=13, fontweight='bold', color='white', pad=15)
+                    ax1.grid(True, alpha=0.2, linestyle='--')
+                    ax1.tick_params(colors='#ccc', labelsize=9)
+                    ax1.set_facecolor('#1a1a1a')
+                    fig1.patch.set_facecolor('#1a1a1a')
+                    plt.xticks(rotation=45, ha='right')
+                    plt.tight_layout()
+                    st.pyplot(fig1)
+                    plt.close()
+                
+                with col2:
+                    st.markdown("##### ⏰ Hourly Distribution")
+                    df['Hour'] = pd.to_datetime(df['Time']).dt.hour
+                    hour_data = df.groupby('Hour').size().reset_index(name='Count')
+                    
+                    fig2, ax2 = plt.subplots(figsize=(10, 5))
+                    bars = ax2.bar(hour_data['Hour'], hour_data['Count'], 
+                                   color='#2196F3', edgecolor='#64B5F6', linewidth=1.5, alpha=0.9)
+                    ax2.set_xlabel('Hour (24h)', fontsize=11, color='#ccc')
+                    ax2.set_ylabel('Violations', fontsize=11, color='#ccc')
+                    ax2.set_title('Violations by Hour of Day', fontsize=13, fontweight='bold', color='white', pad=15)
+                    ax2.grid(True, alpha=0.2, axis='y', linestyle='--')
+                    ax2.tick_params(colors='#ccc', labelsize=9)
+                    ax2.set_facecolor('#1a1a1a')
+                    fig2.patch.set_facecolor('#1a1a1a')
+                    plt.tight_layout()
+                    st.pyplot(fig2)
+                    plt.close()
+                
+                # ============ CHARTS ROW 2 ============
+                col3, col4 = st.columns(2)
+                
+                with col3:
+                    st.markdown("##### 🎯 AI Confidence Distribution")
+                    fig3, ax3 = plt.subplots(figsize=(10, 5))
+                    ax3.hist(df['Detection_Confidence'], bins=20, 
+                            color='#4CAF50', edgecolor='#81C784', linewidth=1.5, alpha=0.9)
+                    ax3.set_xlabel('Confidence %', fontsize=11, color='#ccc')
+                    ax3.set_ylabel('Number of Cases', fontsize=11, color='#ccc')
+                    ax3.set_title('Detection Confidence Scores', fontsize=13, fontweight='bold', color='white', pad=15)
+                    ax3.grid(True, alpha=0.2, axis='y', linestyle='--')
+                    ax3.tick_params(colors='#ccc', labelsize=9)
+                    ax3.set_facecolor('#1a1a1a')
+                    fig3.patch.set_facecolor('#1a1a1a')
+                    plt.tight_layout()
+                    st.pyplot(fig3)
+                    plt.close()
+                
+                with col4:
+                    st.markdown("##### 📊 Case Status Distribution")
+                    reviewed_count = len(df[df['Plate_Number'].notna() & (df['Plate_Number'] != '')])
+                    pending_count = len(df) - reviewed_count
+                    
+                    fig4, ax4 = plt.subplots(figsize=(8, 8))
+                    colors_pie = ['#4CAF50', '#FF9800']
+                    wedges, texts, autotexts = ax4.pie(
+                        [reviewed_count, pending_count],
+                        labels=['Reviewed', 'Pending'],
+                        colors=colors_pie,
+                        autopct='%1.1f%%',
+                        startangle=90,
+                        textprops={'color': 'white', 'fontsize': 12, 'fontweight': 'bold'},
+                        wedgeprops={'edgecolor': '#1a1a1a', 'linewidth': 2}
+                    )
+                    ax4.set_title('Case Review Status', fontsize=13, fontweight='bold', color='white', pad=20)
+                    ax4.set_facecolor('#1a1a1a')
+                    fig4.patch.set_facecolor('#1a1a1a')
+                    # Make percentage text white
+                    for autotext in autotexts:
+                        autotext.set_color('white')
+                        autotext.set_fontweight('bold')
+                    plt.tight_layout()
+                    st.pyplot(fig4)
+                    plt.close()
+                
+                # ============ WEEKLY COMPARISON ============
+                st.markdown("#### 📆 Weekly Performance Comparison")
+                df['Week'] = pd.to_datetime(df['Time']).dt.isocalendar().week
+                df['Weekday'] = pd.to_datetime(df['Time']).dt.day_name()
+                
+                weekday_data = df.groupby('Weekday').size().reset_index(name='Count')
+                day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                weekday_data['Weekday'] = pd.Categorical(weekday_data['Weekday'], categories=day_order, ordered=True)
+                weekday_data = weekday_data.sort_values('Weekday')
+                
+                fig5, ax5 = plt.subplots(figsize=(12, 5))
+                bars = ax5.bar(weekday_data['Weekday'], weekday_data['Count'], 
+                              color='#FF9800', edgecolor='#FFB74D', linewidth=2, alpha=0.9)
+                ax5.set_xlabel('Day of Week', fontsize=11, color='#ccc')
+                ax5.set_ylabel('Violations', fontsize=11, color='#ccc')
+                ax5.set_title('Violations by Day of Week', fontsize=13, fontweight='bold', color='white', pad=15)
+                ax5.grid(True, alpha=0.2, axis='y', linestyle='--')
+                ax5.tick_params(colors='#ccc', labelsize=9)
+                ax5.set_facecolor('#1a1a1a')
+                fig5.patch.set_facecolor('#1a1a1a')
+                
+                # Add value labels on bars
+                for bar in bars:
+                    height = bar.get_height()
+                    ax5.text(bar.get_x() + bar.get_width()/2., height,
+                            f'{int(height)}',
+                            ha='center', va='bottom', color='white', fontweight='bold', fontsize=10)
+                
+                plt.xticks(rotation=45, ha='right')
+                plt.tight_layout()
+                st.pyplot(fig5)
+                plt.close()
+                
+                # ============ KEY INSIGHTS ============
+                st.markdown("#### 💡 Key Insights")
+                
+                # Calculate insights
+                max_day = weekday_data.loc[weekday_data['Count'].idxmax(), 'Weekday']
+                max_hour = hour_data.loc[hour_data['Count'].idxmax(), 'Hour']
+                high_conf = len(df[df['Detection_Confidence'] > 80])
+                high_conf_pct = (high_conf / len(df)) * 100
+                
+                col_i1, col_i2, col_i3 = st.columns(3)
+                
+                with col_i1:
+                    st.markdown(f"""
+                    <div style='background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%); 
+                                padding: 20px; border-radius: 10px; border-left: 4px solid #DC143C;
+                                box-shadow: 0 4px 15px rgba(0,0,0,0.3);'>
+                        <div style='display: flex; align-items: center; margin-bottom: 10px;'>
+                            <span style='font-size: 32px; margin-right: 15px;'>📊</span>
+                            <h4 style='color: #DC143C; margin: 0;'>Peak Day</h4>
+                        </div>
+                        <p style='color: white; font-size: 24px; margin: 10px 0; font-weight: bold;'>{max_day}</p>
+                        <p style='color: #999; font-size: 12px; margin: 0;'>Most violations occur on this day</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_i2:
+                    st.markdown(f"""
+                    <div style='background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%); 
+                                padding: 20px; border-radius: 10px; border-left: 4px solid #2196F3;
+                                box-shadow: 0 4px 15px rgba(0,0,0,0.3);'>
+                        <div style='display: flex; align-items: center; margin-bottom: 10px;'>
+                            <span style='font-size: 32px; margin-right: 15px;'>⏰</span>
+                            <h4 style='color: #2196F3; margin: 0;'>Peak Hour</h4>
+                        </div>
+                        <p style='color: white; font-size: 24px; margin: 10px 0; font-weight: bold;'>{max_hour}:00</p>
+                        <p style='color: #999; font-size: 12px; margin: 0;'>Rush hour violations</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_i3:
+                    st.markdown(f"""
+                    <div style='background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%); 
+                                padding: 20px; border-radius: 10px; border-left: 4px solid #4CAF50;
+                                box-shadow: 0 4px 15px rgba(0,0,0,0.3);'>
+                        <div style='display: flex; align-items: center; margin-bottom: 10px;'>
+                            <span style='font-size: 32px; margin-right: 15px;'>🤖</span>
+                            <h4 style='color: #4CAF50; margin: 0;'>AI Reliability</h4>
+                        </div>
+                        <p style='color: white; font-size: 24px; margin: 10px 0; font-weight: bold;'>{high_conf_pct:.1f}%</p>
+                        <p style='color: #999; font-size: 12px; margin: 0;'>Detections with >80% confidence</p>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 st.markdown("---")
                 
-                # Data table
+                # ============ DATA TABLE ============
                 st.markdown("### 📋 RECENT VIOLATIONS")
                 st.dataframe(
                     df.tail(20)[['Time', 'Plate_Number', 'Detection_Confidence', 'Source', 'Image_File']],
@@ -869,7 +1086,7 @@ with tab4:
                 
                 st.markdown("---")
                 
-                # Export
+                # ============ EXPORT OPTIONS ============
                 col1, col2 = st.columns(2)
                 with col1:
                     csv_data = df.to_csv(index=False).encode('utf-8')
@@ -882,11 +1099,11 @@ with tab4:
                     )
                 
                 with col2:
-                    if st.button("🔄 Refresh Data", use_container_width=True):
+                    if st.button("🔄 Refresh Dashboard", use_container_width=True):
                         st.rerun()
             
             else:
-                st.info("📊 No violations recorded yet")
+                st.info("📊 No violations recorded yet. Process a video to see analytics!")
         
         except Exception as e:
             st.error(f"❌ Error loading analytics: {e}")
