@@ -18,7 +18,18 @@ class TrafficFinePDF:
     
     def __init__(self, output_folder="fines"):
         self.output_folder = output_folder
-        os.makedirs(output_folder, exist_ok=True)
+        # Ensure directory exists with proper permissions
+        try:
+            os.makedirs(output_folder, exist_ok=True)
+            # Test write permissions
+            test_file = os.path.join(output_folder, '.test')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+        except Exception as e:
+            print(f"Warning: Could not create/access output folder {output_folder}: {e}")
+            # Fallback to current directory
+            self.output_folder = "."
         
     def generate_fine(self, violation_data):
         """
@@ -34,7 +45,6 @@ class TrafficFinePDF:
             'address': 'Mohammadpur',
             'vehicle_reg_no': 'Dhaka Metro LA 45-6093',
             'offence': 'Driving Without Helmet',
-            'section': '122',
             'seized_docs': 'T/T',
             'occurrence_date': '2025-06-29 12:00',
             'payment_last_date': '2025-07-20',
@@ -157,7 +167,6 @@ class TrafficFinePDF:
         vehicle_data = [
             ["Vehicle Reg. No.:", violation_data.get('vehicle_reg_no', 'N/A')],
             ["Offence/Offences:", violation_data.get('offence', 'N/A')],
-            ["Section:", f"Section {violation_data.get('section', 'N/A')}"],
             ["Seized Docs:", violation_data.get('seized_docs', 'N/A')],
         ]
         
@@ -288,7 +297,6 @@ def generate_sample_fine():
         'address': 'Mohammadpur',
         'vehicle_reg_no': 'Dhaka Metro LA 45-6093',
         'offence': 'Driving Without Helmet',
-        'section': '122',
         'seized_docs': 'T/T',
         'occurrence_date': '2025-06-29 12:00',
         'payment_last_date': '2025-07-20',
