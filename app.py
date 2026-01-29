@@ -603,86 +603,120 @@ with tab2:
                                     st.image(img_path, caption="License Plate", use_container_width=True)
                                 else:
                                     st.warning("Image not found")
+                        
+                        # Generate fine form section - FULL WIDTH BELOW
+                        with st.expander(f"📄 Generate Fine for Case #{idx+1}", expanded=False):
+                            with st.form(key=f"fine_form_{idx}"):
+                                st.markdown("### 📋 Fine Details")
                                 
-                                # Generate fine button
-                                if st.button(f"📄 Generate Fine #{idx+1}", key=f"gen_{idx}", use_container_width=True):
-                                    with st.form(key=f"fine_form_{idx}"):
-                                        st.markdown("### Fine Details")
+                                # Left side form - Personal details
+                                st.markdown("#### Personal Information")
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    accused = st.text_input("Accused Person*", key=f"accused_{idx}", placeholder="Enter full name")
+                                    father = st.text_input("Father/Spouse Name*", key=f"father_{idx}", placeholder="Enter father/spouse name")
+                                    
+                                with col_b:
+                                    cell = st.text_input("Cell Number*", key=f"cell_{idx}", placeholder="e.g., 01858051852")
+                                    address = st.text_area("Address*", key=f"address_{idx}", placeholder="Enter full address", height=100)
+                                
+                                st.markdown("---")
+                                
+                                # Vehicle & Offence details
+                                st.markdown("#### Vehicle & Offence Information")
+                                col_c, col_d = st.columns(2)
+                                with col_c:
+                                    vehicle_reg = st.text_input("Vehicle Reg No*", value=row['Plate_Number'] if pd.notna(row['Plate_Number']) else "", key=f"vehicle_{idx}", placeholder="e.g., Dhaka Metro LA 45-6093")
+                                    offence = st.selectbox("Offence*", [
+                                        "Driving Without Helmet",
+                                        "Riding Without Helmet",
+                                        "Passenger Without Helmet"
+                                    ], key=f"offence_{idx}")
+                                
+                                with col_d:
+                                    section = st.text_input("Section*", value="122", key=f"section_{idx}")
+                                    fine_amount = st.text_input("Fine Amount (TK)*", value="1,000.00", key=f"amount_{idx}")
+                                
+                                st.markdown("---")
+                                
+                                # Officer details
+                                st.markdown("#### Officer & Location Details")
+                                col_e, col_f = st.columns(2)
+                                with col_e:
+                                    witness = st.text_input("Witness", value="Traffic Officer", key=f"witness_{idx}")
+                                    division = st.text_input("Division", value="Tejgaon", key=f"div_{idx}")
+                                
+                                with col_f:
+                                    officer_id = st.text_input("Officer ID", value="9623252925", key=f"officer_{idx}")
+                                    location = st.text_input("Location", value="DHAKA METRO", key=f"loc_{idx}")
+                                
+                                st.markdown("---")
+                                
+                                submitted = st.form_submit_button("✅ Generate Fine PDF", use_container_width=True, type="primary")
+                            
+                            # Handle form submission OUTSIDE the form
+                            if submitted:
+                                if all([accused, father, cell, address, vehicle_reg]):
+                                    # Generate case ID
+                                    case_id = f"100{idx:07d}"
+                                    trace_no = f"{idx:06d}"
+                                    
+                                    # Prepare data
+                                    violation_data = {
+                                        'trace_no': trace_no,
+                                        'case_id': case_id,
+                                        'accused_person': accused,
+                                        'father_spouse': father,
+                                        'cell_number': cell,
+                                        'address': address,
+                                        'vehicle_reg_no': vehicle_reg,
+                                        'offence': offence,
+                                        'section': section,
+                                        'seized_docs': 'T/T',
+                                        'occurrence_date': row['Time'],
+                                        'payment_last_date': (datetime.strptime(row['Time'], '%Y-%m-%d %H:%M:%S') + timedelta(days=21)).strftime('%Y-%m-%d'),
+                                        'witness': witness,
+                                        'fine_amount': fine_amount,
+                                        'officer_id': officer_id,
+                                        'officer_name': 'Traffic Officer',
+                                        'division': division,
+                                        'location': location,
+                                        'plate_image_path': img_path if os.path.exists(img_path) else None
+                                    }
+                                    
+                                    # Generate PDF
+                                    try:
+                                        pdf_gen = TrafficFinePDF()
+                                        pdf_path = pdf_gen.generate_fine(violation_data)
                                         
-                                        col_a, col_b = st.columns(2)
-                                        with col_a:
-                                            accused = st.text_input("Accused Person*", key=f"accused_{idx}")
-                                            father = st.text_input("Father/Spouse Name*", key=f"father_{idx}")
-                                            cell = st.text_input("Cell Number*", key=f"cell_{idx}")
-                                            address = st.text_input("Address*", key=f"address_{idx}")
+                                        st.success(f"✅ Fine PDF generated successfully!")
                                         
-                                        with col_b:
-                                            vehicle_reg = st.text_input("Vehicle Reg No*", value=row['Plate_Number'] if pd.notna(row['Plate_Number']) else "", key=f"vehicle_{idx}")
-                                            offence = st.selectbox("Offence*", [
-                                                "Driving Without Helmet",
-                                                "Riding Without Helmet",
-                                                "Passenger Without Helmet"
-                                            ], key=f"offence_{idx}")
-                                            section = st.text_input("Section*", value="122", key=f"section_{idx}")
-                                            fine_amount = st.text_input("Fine Amount (TK)*", value="1,000.00", key=f"amount_{idx}")
+                                        # Provide immediate download OUTSIDE form
+                                        with open(pdf_path, 'rb') as f:
+                                            pdf_data = f.read()
+                                            st.download_button(
+                                                label="⬇️ Download Fine PDF",
+                                                data=pdf_data,
+                                                file_name=os.path.basename(pdf_path),
+                                                mime="application/pdf",
+                                                key=f"download_new_{idx}",
+                                                use_container_width=True
+                                            )
                                         
-                                        col_c, col_d = st.columns(2)
-                                        with col_c:
-                                            witness = st.text_input("Witness", value="Traffic Officer", key=f"witness_{idx}")
-                                            officer_id = st.text_input("Officer ID", value="9623252925", key=f"officer_{idx}")
+                                        st.info(f"📁 PDF saved to: `{pdf_path}`")
+                                        st.info(f"📄 You can also find this PDF in the 'PDF DOCUMENTS' tab")
                                         
-                                        with col_d:
-                                            division = st.text_input("Division", value="Tejgaon", key=f"div_{idx}")
-                                            location = st.text_input("Location", value="DHAKA METRO", key=f"loc_{idx}")
+                                        # Update plate number if not set
+                                        if pd.isna(row['Plate_Number']) or row['Plate_Number'] == '':
+                                            df.at[idx, 'Plate_Number'] = vehicle_reg
+                                            df.to_csv(CSV_FILE, index=False)
                                         
-                                        submitted = st.form_submit_button("✅ Generate Fine PDF", use_container_width=True)
-                                        
-                                        if submitted:
-                                            if all([accused, father, cell, address, vehicle_reg]):
-                                                # Generate case ID
-                                                case_id = f"100{idx:07d}"
-                                                trace_no = f"{idx:06d}"
-                                                
-                                                # Prepare data
-                                                violation_data = {
-                                                    'trace_no': trace_no,
-                                                    'case_id': case_id,
-                                                    'accused_person': accused,
-                                                    'father_spouse': father,
-                                                    'cell_number': cell,
-                                                    'address': address,
-                                                    'vehicle_reg_no': vehicle_reg,
-                                                    'offence': offence,
-                                                    'section': section,
-                                                    'seized_docs': 'T/T',
-                                                    'occurrence_date': row['Time'],
-                                                    'payment_last_date': (datetime.strptime(row['Time'], '%Y-%m-%d %H:%M:%S') + timedelta(days=21)).strftime('%Y-%m-%d'),
-                                                    'witness': witness,
-                                                    'fine_amount': fine_amount,
-                                                    'officer_id': officer_id,
-                                                    'officer_name': 'Traffic Officer',
-                                                    'division': division,
-                                                    'location': location,
-                                                    'plate_image_path': img_path if os.path.exists(img_path) else None
-                                                }
-                                                
-                                                # Generate PDF
-                                                try:
-                                                    pdf_gen = TrafficFinePDF()
-                                                    pdf_path = pdf_gen.generate_fine(violation_data)
-                                                    
-                                                    st.success(f"✅ Fine PDF generated successfully!")
-                                                    st.info(f"📄 **Go to 'PDF DOCUMENTS' tab to view and download the generated fine.**")
-                                                    
-                                                    # Update plate number if not set
-                                                    if pd.isna(row['Plate_Number']) or row['Plate_Number'] == '':
-                                                        df.at[idx, 'Plate_Number'] = vehicle_reg
-                                                        df.to_csv(CSV_FILE, index=False)
-                                                    
-                                                except Exception as e:
-                                                    st.error(f"Error generating PDF: {e}")
-                                            else:
-                                                st.error("Please fill all required fields marked with *")
+                                    except Exception as e:
+                                        st.error(f"❌ Error generating PDF: {str(e)}")
+                                        import traceback
+                                        st.code(traceback.format_exc())
+                                else:
+                                    st.error("❌ Please fill all required fields marked with *")
                         
                         st.markdown("---")
                 else:
@@ -903,12 +937,6 @@ PDFs: fines/
         """)
 
 # ================= FOOTER =================
-st.markdown("""
-<div class="logo-badge">
-    🛡️ Safeguard Vision v3.0
-</div>
-""", unsafe_allow_html=True)
-
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #888; padding: 20px;'>
